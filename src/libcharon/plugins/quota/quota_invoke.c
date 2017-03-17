@@ -24,7 +24,6 @@
 #include "quota_invoke.h"
 
 #include <utils/process.h>
-#include <hydra.h>
 #include <daemon.h>
 #include <config/child_cfg.h>
 
