@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2011-2013 Tobias Brunner
  * Copyright (C) 2008 Martin Willi
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -613,7 +613,7 @@ static void stroke_config(private_stroke_socket_t *this,
 static bool on_accept(private_stroke_socket_t *this, stream_t *stream)
 {
 	stroke_msg_t *msg;
-	u_int16_t len;
+	uint16_t len;
 	FILE *out;
 
 	/* read length */

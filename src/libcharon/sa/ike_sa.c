@@ -1,9 +1,9 @@
 /*
- * Copyright (C) 2006-2015 Tobias Brunner
+ * Copyright (C) 2006-2016 Tobias Brunner
  * Copyright (C) 2006 Daniel Roethlisberger
  * Copyright (C) 2005-2009 Martin Willi
  * Copyright (C) 2005 Jan Hutter
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -71,6 +71,7 @@ ENUM(ike_sa_state_names, IKE_CREATED, IKE_DESTROYING,
 	"ESTABLISHED",
 	"PASSIVE",
 	"REKEYING",
+	"REKEYED",
 	"DELETING",
 	"DESTROYING",
 );
@@ -101,7 +102,7 @@ struct private_ike_sa_t {
 	/**
 	 * unique numerical ID for this IKE_SA.
 	 */
-	u_int32_t unique_id;
+	uint32_t unique_id;
 
 	/**
 	 * Current state of the IKE_SA
@@ -233,12 +234,12 @@ struct private_ike_sa_t {
 	/**
 	 * number pending UPDATE_SA_ADDRESS (MOBIKE)
 	 */
-	u_int32_t pending_updates;
+	uint32_t pending_updates;
 
 	/**
 	 * NAT keep alive interval
 	 */
-	u_int32_t keepalive_interval;
+	uint32_t keepalive_interval;
 
 	/**
 	 * The schedueld keep alive job, if any
@@ -249,7 +250,7 @@ struct private_ike_sa_t {
 	 * interval for retries during initiation (e.g. if DNS resolution failed),
 	 * 0 to disable (default)
 	 */
-	u_int32_t retry_initiate_interval;
+	uint32_t retry_initiate_interval;
 
 	/**
 	 * TRUE if a retry_initiate_job has been queued
@@ -259,12 +260,12 @@ struct private_ike_sa_t {
 	/**
 	 * Timestamps for this IKE_SA
 	 */
-	u_int32_t stats[STAT_MAX];
+	uint32_t stats[STAT_MAX];
 
 	/**
 	 * how many times we have retried so far (keyingtries)
 	 */
-	u_int32_t keyingtry;
+	uint32_t keyingtry;
 
 	/**
 	 * local host address to be used for IKE, set via MIGRATE kernel message
@@ -343,7 +344,7 @@ static time_t get_use_time(private_ike_sa_t* this, bool inbound)
 	return use_time;
 }
 
-METHOD(ike_sa_t, get_unique_id, u_int32_t,
+METHOD(ike_sa_t, get_unique_id, uint32_t,
 	private_ike_sa_t *this)
 {
 	return this->unique_id;
@@ -359,7 +360,7 @@ METHOD(ike_sa_t, get_name, char*,
 	return "(unnamed)";
 }
 
-METHOD(ike_sa_t, get_statistic, u_int32_t,
+METHOD(ike_sa_t, get_statistic, uint32_t,
 	private_ike_sa_t *this, statistic_t kind)
 {
 	if (kind < STAT_MAX)
@@ -370,7 +371,7 @@ METHOD(ike_sa_t, get_statistic, u_int32_t,
 }
 
 METHOD(ike_sa_t, set_statistic, void,
-	private_ike_sa_t *this, statistic_t kind, u_int32_t value)
+	private_ike_sa_t *this, statistic_t kind, uint32_t value)
 {
 	if (kind < STAT_MAX)
 	{
@@ -604,7 +605,7 @@ METHOD(ike_sa_t, set_proposal, void,
 }
 
 METHOD(ike_sa_t, set_message_id, void,
-	private_ike_sa_t *this, bool initiate, u_int32_t mid)
+	private_ike_sa_t *this, bool initiate, uint32_t mid)
 {
 	if (initiate)
 	{
@@ -814,7 +815,7 @@ METHOD(ike_sa_t, set_state, void,
 				this->state == IKE_PASSIVE)
 			{
 				job_t *job;
-				u_int32_t t;
+				uint32_t t;
 
 				/* calculate rekey, reauth and lifetime */
 				this->stats[STAT_ESTABLISHED] = time_monotonic(NULL);
@@ -920,6 +921,7 @@ METHOD(ike_sa_t, reset, void,
 							this->ike_sa_id->is_initiator(this->ike_sa_id));
 
 	this->task_manager->reset(this->task_manager, 0, 0);
+	this->task_manager->queue_ike(this->task_manager);
 }
 
 METHOD(ike_sa_t, get_keymat, keymat_t*,
@@ -1035,12 +1037,12 @@ METHOD(ike_sa_t, has_mapping_changed, bool,
 }
 
 METHOD(ike_sa_t, set_pending_updates, void,
-	private_ike_sa_t *this, u_int32_t updates)
+	private_ike_sa_t *this, uint32_t updates)
 {
 	this->pending_updates = updates;
 }
 
-METHOD(ike_sa_t, get_pending_updates, u_int32_t,
+METHOD(ike_sa_t, get_pending_updates, uint32_t,
 	private_ike_sa_t *this)
 {
 	return this->pending_updates;
@@ -1203,6 +1205,7 @@ METHOD(ike_sa_t, generate_message_fragmented, status_t,
 	packet_t *packet;
 	status_t status;
 	bool use_frags = FALSE;
+	bool pre_generated = FALSE;
 
 	if (this->ike_cfg)
 	{
@@ -1237,14 +1240,21 @@ METHOD(ike_sa_t, generate_message_fragmented, status_t,
 		return SUCCESS;
 	}
 
+	pre_generated = message->is_encoded(message);
 	this->stats[STAT_OUTBOUND] = time_monotonic(NULL);
 	message->set_ike_sa_id(message, this->ike_sa_id);
-	charon->bus->message(charon->bus, message, FALSE, TRUE);
+	if (!pre_generated)
+	{
+		charon->bus->message(charon->bus, message, FALSE, TRUE);
+	}
 	status = message->fragment(message, this->keymat, this->fragment_size,
 							   &fragments);
 	if (status == SUCCESS)
 	{
-		charon->bus->message(charon->bus, message, FALSE, FALSE);
+		if (!pre_generated)
+		{
+			charon->bus->message(charon->bus, message, FALSE, FALSE);
+		}
 		*packets = enumerator_create_filter(fragments, (void*)filter_fragments,
 											this, NULL);
 	}
@@ -1432,7 +1442,7 @@ static void resolve_hosts(private_ike_sa_t *this)
 }
 
 METHOD(ike_sa_t, initiate, status_t,
-	private_ike_sa_t *this, child_cfg_t *child_cfg, u_int32_t reqid,
+	private_ike_sa_t *this, child_cfg_t *child_cfg, uint32_t reqid,
 	traffic_selector_t *tsi, traffic_selector_t *tsr)
 {
 	bool defer_initiate = FALSE;
@@ -1642,7 +1652,7 @@ METHOD(ike_sa_t, add_child_sa, void,
 }
 
 METHOD(ike_sa_t, get_child_sa, child_sa_t*,
-	private_ike_sa_t *this, protocol_id_t protocol, u_int32_t spi, bool inbound)
+	private_ike_sa_t *this, protocol_id_t protocol, uint32_t spi, bool inbound)
 {
 	enumerator_t *enumerator;
 	child_sa_t *current, *found = NULL;
@@ -1721,7 +1731,7 @@ METHOD(ike_sa_t, remove_child_sa, void,
 }
 
 METHOD(ike_sa_t, rekey_child_sa, status_t,
-	private_ike_sa_t *this, protocol_id_t protocol, u_int32_t spi)
+	private_ike_sa_t *this, protocol_id_t protocol, uint32_t spi)
 {
 	if (this->state == IKE_PASSIVE)
 	{
@@ -1732,7 +1742,7 @@ METHOD(ike_sa_t, rekey_child_sa, status_t,
 }
 
 METHOD(ike_sa_t, delete_child_sa, status_t,
-	private_ike_sa_t *this, protocol_id_t protocol, u_int32_t spi, bool expired)
+	private_ike_sa_t *this, protocol_id_t protocol, uint32_t spi, bool expired)
 {
 	if (this->state == IKE_PASSIVE)
 	{
@@ -1744,7 +1754,7 @@ METHOD(ike_sa_t, delete_child_sa, status_t,
 }
 
 METHOD(ike_sa_t, destroy_child_sa, status_t,
-	private_ike_sa_t *this, protocol_id_t protocol, u_int32_t spi)
+	private_ike_sa_t *this, protocol_id_t protocol, uint32_t spi)
 {
 	enumerator_t *enumerator;
 	child_sa_t *child_sa;
@@ -1771,16 +1781,12 @@ METHOD(ike_sa_t, delete_, status_t,
 {
 	switch (this->state)
 	{
-		case IKE_REKEYING:
-			if (this->version == IKEV1)
-			{	/* SA has been reauthenticated, delete */
-				charon->bus->ike_updown(charon->bus, &this->public, FALSE);
-				break;
-			}
-			/* FALL */
 		case IKE_ESTABLISHED:
-			if (time_monotonic(NULL) >= this->stats[STAT_DELETE])
-			{	/* IKE_SA hard lifetime hit */
+		case IKE_REKEYING:
+			if (time_monotonic(NULL) >= this->stats[STAT_DELETE] &&
+				!(this->version == IKEV1 && this->state == IKE_REKEYING))
+			{	/* IKE_SA hard lifetime hit, ignored for reauthenticated
+				 * IKEv1 SAs */
 				charon->bus->alert(charon->bus, ALERT_IKE_SA_EXPIRED);
 			}
 			this->task_manager->queue_ike_delete(this->task_manager);
@@ -1822,7 +1828,6 @@ METHOD(ike_sa_t, reauth, status_t,
 		DBG0(DBG_IKE, "reinitiating IKE_SA %s[%d]",
 			 get_name(this), this->unique_id);
 		reset(this);
-		this->task_manager->queue_ike(this->task_manager);
 		return this->task_manager->initiate(this->task_manager);
 	}
 	/* we can't reauthenticate as responder when we use EAP or virtual IPs.
@@ -2301,7 +2306,7 @@ METHOD(ike_sa_t, redirect, status_t,
 }
 
 METHOD(ike_sa_t, retransmit, status_t,
-	private_ike_sa_t *this, u_int32_t message_id)
+	private_ike_sa_t *this, uint32_t message_id)
 {
 	if (this->state == IKE_PASSIVE)
 	{
@@ -2316,7 +2321,7 @@ METHOD(ike_sa_t, retransmit, status_t,
 			case IKE_CONNECTING:
 			{
 				/* retry IKE_SA_INIT/Main Mode if we have multiple keyingtries */
-				u_int32_t tries = this->peer_cfg->get_keyingtries(this->peer_cfg);
+				uint32_t tries = this->peer_cfg->get_keyingtries(this->peer_cfg);
 				charon->bus->alert(charon->bus, ALERT_PEER_INIT_UNREACHABLE,
 								   this->keyingtry);
 				this->keyingtry++;
@@ -2326,7 +2331,6 @@ METHOD(ike_sa_t, retransmit, status_t,
 						 this->keyingtry + 1, tries);
 					reset(this);
 					resolve_hosts(this);
-					this->task_manager->queue_ike(this->task_manager);
 					return this->task_manager->initiate(this->task_manager);
 				}
 				DBG1(DBG_IKE, "establishing IKE_SA failed, peer not responding");
@@ -2348,7 +2352,8 @@ METHOD(ike_sa_t, retransmit, status_t,
 				reestablish(this);
 				break;
 		}
-		if (this->state != IKE_CONNECTING)
+		if (this->state != IKE_CONNECTING &&
+			this->state != IKE_REKEYED)
 		{
 			charon->bus->ike_updown(charon->bus, &this->public, FALSE);
 		}
@@ -2358,9 +2363,9 @@ METHOD(ike_sa_t, retransmit, status_t,
 }
 
 METHOD(ike_sa_t, set_auth_lifetime, status_t,
-	private_ike_sa_t *this, u_int32_t lifetime)
+	private_ike_sa_t *this, uint32_t lifetime)
 {
-	u_int32_t diff, hard, soft, now;
+	uint32_t diff, hard, soft, now;
 	bool send_update;
 
 	diff = this->peer_cfg->get_over_time(this->peer_cfg);
@@ -2500,6 +2505,7 @@ METHOD(ike_sa_t, roam, status_t,
 		case IKE_DELETING:
 		case IKE_DESTROYING:
 		case IKE_PASSIVE:
+		case IKE_REKEYED:
 			return SUCCESS;
 		default:
 			break;
@@ -2607,6 +2613,12 @@ METHOD(ike_sa_t, queue_task, void,
 	private_ike_sa_t *this, task_t *task)
 {
 	this->task_manager->queue_task(this->task_manager, task);
+}
+
+METHOD(ike_sa_t, queue_task_delayed, void,
+	private_ike_sa_t *this, task_t *task, uint32_t delay)
+{
+	this->task_manager->queue_task_delayed(this->task_manager, task, delay);
 }
 
 METHOD(ike_sa_t, inherit_pre, void,
@@ -2927,6 +2939,7 @@ ike_sa_t * ike_sa_create(ike_sa_id_t *ike_sa_id, bool initiator,
 			.create_task_enumerator = _create_task_enumerator,
 			.flush_queue = _flush_queue,
 			.queue_task = _queue_task,
+			.queue_task_delayed = _queue_task_delayed,
 #ifdef ME
 			.act_as_mediation_server = _act_as_mediation_server,
 			.get_server_reflexive_host = _get_server_reflexive_host,
@@ -2962,7 +2975,7 @@ ike_sa_t * ike_sa_create(ike_sa_id_t *ike_sa_id, bool initiator,
 		.flush_auth_cfg = lib->settings->get_bool(lib->settings,
 								"%s.flush_auth_cfg", FALSE, lib->ns),
 		.fragment_size = lib->settings->get_int(lib->settings,
-								"%s.fragment_size", 0, lib->ns),
+								"%s.fragment_size", 1280, lib->ns),
 		.follow_redirects = lib->settings->get_bool(lib->settings,
 								"%s.follow_redirects", TRUE, lib->ns),
 	);
