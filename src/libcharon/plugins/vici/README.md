@@ -277,8 +277,8 @@ Terminates an SA while streaming _control-log_ events.
 	{
 		child = <terminate a CHILD_SA by configuration name>
 		ike = <terminate an IKE_SA by configuration name>
-		child_id = <terminate a CHILD_SA by its reqid>
-		ike_id = <terminate an IKE_SA by its unique id>
+		child-id = <terminate a CHILD_SA by its reqid>
+		ike-id = <terminate an IKE_SA by its unique id>
 		timeout = <timeout in ms before returning>
 		loglevel = <loglevel to issue "control-log" events for>
 	} => {
@@ -337,7 +337,7 @@ events.
 	{
 		noblock = <use non-blocking mode if key is set>
 		ike = <filter listed IKE_SAs by its name>
-		ike_id = <filter listed IKE_SA by its unique id>
+		ike-id = <filter listed IKE_SA by its unique id>
 	} => {
 		# completes after streaming list-sa events
 	}
@@ -476,6 +476,19 @@ Load a shared IKE PSK, EAP or XAuth secret into the daemon.
 		owners = [
 			<list of shared key owner identities>
 		]
+	} => {
+		success = <yes or no>
+		errmsg = <error string on failure>
+	}
+
+### flush-certs() ###
+
+Flushes the certificate cache. The optional type argument allows to flush
+only certificates of a given type, e.g. all cached CRLs.
+
+	{
+		type = <certificate type to filter for, X509|X509_AC|X509_CRL|
+												OCSP_RESPONSE|PUBKEY or ANY>
 	} => {
 		success = <yes or no>
 		errmsg = <error string on failure>
@@ -734,6 +747,8 @@ _list-conns_ command.
 				<list of valid remote IKE endpoint addresses>
 			]
 			version = <IKE version as string, IKEv1|IKEv2 or 0 for any>
+			reauth_time = <IKE_SA reauthentication interval in seconds>
+			rekey_time = <IKE_SA rekeying interval in seconds>
 
 			local*, remote* = { # multiple local and remote auth sections
 				class = <authentication type>
@@ -758,6 +773,9 @@ _list-conns_ command.
 			children = {
 				<CHILD_SA config name>* = {
 					mode = <IPsec mode>
+					rekey_time = <CHILD_SA rekeying interval in seconds>
+					rekey_bytes = <CHILD_SA rekeying interval in bytes>
+					rekey_packets = <CHILD_SA rekeying interval in packets>
 					local-ts = [
 						<list of local traffic selectors>
 					]

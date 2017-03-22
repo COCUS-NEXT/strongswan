@@ -222,6 +222,7 @@ static void conn_defaults(starter_conn_t *conn)
 	conn->dpd_delay             =  30; /* seconds */
 	conn->dpd_timeout           = 150; /* seconds */
 	conn->replay_window         = SA_REPLAY_WINDOW_DEFAULT;
+	conn->fragmentation         = FRAGMENTATION_YES;
 
 	conn->left.sendcert = CERT_SEND_IF_ASKED;
 	conn->right.sendcert = CERT_SEND_IF_ASKED;
@@ -331,7 +332,7 @@ static void kw_end(starter_conn_t *conn, starter_end_t *end, kw_token_t token,
 						DBG1(DBG_APP, "# bad protocol: %s=%s", key, value);
 						goto err;
 					}
-					end->protocol = (u_int8_t)p;
+					end->protocol = (uint8_t)p;
 				}
 			}
 			if (streq(port, "%any"))

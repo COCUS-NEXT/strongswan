@@ -191,7 +191,8 @@ METHOD(kernel_net_t, get_source_addr_old, host_t*,
 }
 
 METHOD(kernel_net_t, get_nexthop, host_t*,
-	private_android_net_t *this, host_t *dest, int prefix, host_t *src)
+	private_android_net_t *this, host_t *dest, int prefix, host_t *src,
+	char **iface)
 {
 	return NULL;
 }
@@ -246,14 +247,14 @@ METHOD(kernel_net_t, del_ip, status_t,
 }
 
 METHOD(kernel_net_t, add_route, status_t,
-	private_android_net_t *this, chunk_t dst_net, u_int8_t prefixlen,
+	private_android_net_t *this, chunk_t dst_net, uint8_t prefixlen,
 	host_t *gateway, host_t *src_ip, char *if_name)
 {
 	return NOT_SUPPORTED;
 }
 
 METHOD(kernel_net_t, del_route, status_t,
-	private_android_net_t *this, chunk_t dst_net, u_int8_t prefixlen,
+	private_android_net_t *this, chunk_t dst_net, uint8_t prefixlen,
 	host_t *gateway, host_t *src_ip, char *if_name)
 {
 	return NOT_SUPPORTED;
