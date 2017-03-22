@@ -221,7 +221,7 @@ static bool load_conn(vici_conn_t *conn, settings_t *cfg,
 	vici_req_t *req;
 	vici_res_t *res;
 	bool ret = TRUE;
-	char buf[128];
+	char buf[BUF_LEN];
 
 	snprintf(buf, sizeof(buf), "%s.%s", "connections", section);
 
@@ -396,7 +396,7 @@ int load_conns_cfg(vici_conn_t *conn, command_format_options_t format,
 	}
 	if (found == 0)
 	{
-		printf("no connections found, %u unloaded\n", unloaded);
+		fprintf(stderr, "no connections found, %u unloaded\n", unloaded);
 		return 0;
 	}
 	if (loaded == found)

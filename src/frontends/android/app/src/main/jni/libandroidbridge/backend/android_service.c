@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2010-2015 Tobias Brunner
+ * Copyright (C) 2010-2016 Tobias Brunner
  * Copyright (C) 2012 Giuliano Grassi
  * Copyright (C) 2012 Ralf Sager
- * Hochschule fuer Technik Rapperswil
+ * HSR Hochschule fuer Technik Rapperswil
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -208,7 +208,7 @@ static job_requeue_t handle_plain(private_android_service_t *this)
  * Add a route to the TUN device builder
  */
 static bool add_route(vpnservice_builder_t *builder, host_t *net,
-					  u_int8_t prefix)
+					  uint8_t prefix)
 {
 	/* if route is 0.0.0.0/0, split it into two routes 0.0.0.0/1 and
 	 * 128.0.0.0/1 because otherwise it would conflict with the current default
@@ -246,7 +246,7 @@ static bool add_routes(vpnservice_builder_t *builder, child_sa_t *child_sa)
 	while (success && enumerator->enumerate(enumerator, &src_ts, &dst_ts))
 	{
 		host_t *net;
-		u_int8_t prefix;
+		uint8_t prefix;
 
 		dst_ts->to_subnet(dst_ts, &net, &prefix);
 		success = add_route(builder, net, prefix);
@@ -399,7 +399,7 @@ static void close_tun_device(private_android_service_t *this)
  * Terminate the IKE_SA with the given unique ID
  */
 CALLBACK(terminate, job_requeue_t,
-	u_int32_t *id)
+	uint32_t *id)
 {
 	charon->controller->terminate_ike(charon->controller, *id,
 									  controller_cb_empty, NULL, 0);
@@ -410,7 +410,7 @@ CALLBACK(terminate, job_requeue_t,
  * Reestablish the IKE_SA with the given unique ID
  */
 CALLBACK(reestablish, job_requeue_t,
-	u_int32_t *id)
+	uint32_t *id)
 {
 	ike_sa_t *ike_sa;
 
@@ -430,41 +430,6 @@ CALLBACK(reestablish, job_requeue_t,
 	return JOB_REQUEUE_NONE;
 }
 
-METHOD(listener_t, child_updown, bool,
-	private_android_service_t *this, ike_sa_t *ike_sa, child_sa_t *child_sa,
-	bool up)
-{
-	if (this->ike_sa == ike_sa)
-	{
-		if (up)
-		{
-			/* disable the hooks registered to catch initiation failures */
-			this->public.listener.ike_updown = NULL;
-			/* CHILD_SA is up so we can disable the DNS proxy we enabled to
-			 * reestablish the SA */
-			this->lock->write_lock(this->lock);
-			this->use_dns_proxy = FALSE;
-			this->lock->unlock(this->lock);
-			if (!setup_tun_device(this, ike_sa, child_sa))
-			{
-				DBG1(DBG_DMN, "failed to setup TUN device");
-				charonservice->update_status(charonservice,
-											 CHARONSERVICE_GENERIC_ERROR);
-				return FALSE;
-
-			}
-			charonservice->update_status(charonservice,
-										 CHARONSERVICE_CHILD_STATE_UP);
-		}
-		else
-		{
-			charonservice->update_status(charonservice,
-										 CHARONSERVICE_CHILD_STATE_DOWN);
-		}
-	}
-	return TRUE;
-}
-
 METHOD(listener_t, ike_updown, bool,
 	private_android_service_t *this, ike_sa_t *ike_sa, bool up)
 {
@@ -480,85 +445,24 @@ METHOD(listener_t, ike_updown, bool,
 	return TRUE;
 }
 
-METHOD(listener_t, alert, bool,
-	private_android_service_t *this, ike_sa_t *ike_sa, alert_t alert,
-	va_list args)
-{
-	if (this->ike_sa == ike_sa)
-	{
-		switch (alert)
-		{
-			case ALERT_PEER_ADDR_FAILED:
-				charonservice->update_status(charonservice,
-											 CHARONSERVICE_LOOKUP_ERROR);
-				break;
-			case ALERT_PEER_AUTH_FAILED:
-				charonservice->update_status(charonservice,
-											 CHARONSERVICE_PEER_AUTH_ERROR);
-				break;
-			case ALERT_KEEP_ON_CHILD_SA_FAILURE:
-			{
-				u_int32_t *id = malloc_thing(u_int32_t);
-
-				/* because close_ike_on_child_failure is set this is only
-				 * triggered when CHILD_SA rekeying failed. reestablish it in
-				 * the hope that the initial setup works again. */
-				*id = ike_sa->get_unique_id(ike_sa);
-				lib->processor->queue_job(lib->processor,
-					(job_t*)callback_job_create_with_prio(
-						(callback_job_cb_t)reestablish, id, free,
-						(callback_job_cancel_t)return_false, JOB_PRIO_HIGH));
-				break;
-			}
-			case ALERT_PEER_INIT_UNREACHABLE:
-				this->lock->read_lock(this->lock);
-				if (this->tunfd < 0)
-				{
-					u_int32_t *id = malloc_thing(u_int32_t);
-
-					/* always fail if we are not able to initiate the IKE_SA
-					 * initially */
-					charonservice->update_status(charonservice,
-											CHARONSERVICE_UNREACHABLE_ERROR);
-					/* terminate the IKE_SA so no further keying tries are
-					 * attempted */
-					*id = ike_sa->get_unique_id(ike_sa);
-					lib->processor->queue_job(lib->processor,
-						(job_t*)callback_job_create_with_prio(
-							(callback_job_cb_t)terminate, id, free,
-							(callback_job_cancel_t)return_false, JOB_PRIO_HIGH));
-				}
-				else
-				{
-					peer_cfg_t *peer_cfg;
-					u_int32_t tries, try;
-
-					/* when reestablishing and if keyingtries is not %forever
-					 * the IKE_SA is destroyed after the set number of tries,
-					 * so notify the GUI */
-					peer_cfg = ike_sa->get_peer_cfg(ike_sa);
-					tries = peer_cfg->get_keyingtries(peer_cfg);
-					try = va_arg(args, u_int32_t);
-					if (tries != 0 && try == tries-1)
-					{
-						charonservice->update_status(charonservice,
-											CHARONSERVICE_UNREACHABLE_ERROR);
-					}
-				}
-				this->lock->unlock(this->lock);
-				break;
-			default:
-				break;
-		}
-	}
-	return TRUE;
-}
-
 METHOD(listener_t, ike_rekey, bool,
 	private_android_service_t *this, ike_sa_t *old, ike_sa_t *new)
 {
 	if (this->ike_sa == old)
 	{
+		this->ike_sa = new;
+	}
+	return TRUE;
+}
+
+METHOD(listener_t, ike_reestablish_post_redirect, bool,
+	private_android_service_t *this, ike_sa_t *old, ike_sa_t *new,
+	bool initiated)
+{
+	if (this->ike_sa == old && initiated)
+	{	/* if we get redirected during IKE_AUTH we just migrate to the new SA,
+		 * we don't have a TUN device yet, so reinstalling it without DNS would
+		 * fail (and using the DNS proxy is not required anyway) */
 		this->ike_sa = new;
 	}
 	return TRUE;
@@ -604,12 +508,124 @@ METHOD(listener_t, ike_reestablish_post, bool,
 	return TRUE;
 }
 
+METHOD(listener_t, child_updown, bool,
+	private_android_service_t *this, ike_sa_t *ike_sa, child_sa_t *child_sa,
+	bool up)
+{
+	if (this->ike_sa == ike_sa)
+	{
+		if (up)
+		{
+			/* disable the hooks registered to catch initiation failures */
+			this->public.listener.ike_updown = NULL;
+			/* enable hooks to handle reauthentications */
+			this->public.listener.ike_reestablish_pre = _ike_reestablish_pre;
+			this->public.listener.ike_reestablish_post = _ike_reestablish_post;
+			/* CHILD_SA is up so we can disable the DNS proxy we enabled to
+			 * reestablish the SA */
+			this->lock->write_lock(this->lock);
+			this->use_dns_proxy = FALSE;
+			this->lock->unlock(this->lock);
+			if (!setup_tun_device(this, ike_sa, child_sa))
+			{
+				DBG1(DBG_DMN, "failed to setup TUN device");
+				charonservice->update_status(charonservice,
+											 CHARONSERVICE_GENERIC_ERROR);
+				return FALSE;
+
+			}
+			charonservice->update_status(charonservice,
+										 CHARONSERVICE_CHILD_STATE_UP);
+		}
+		else
+		{
+			charonservice->update_status(charonservice,
+										 CHARONSERVICE_CHILD_STATE_DOWN);
+		}
+	}
+	return TRUE;
+}
+
+METHOD(listener_t, alert, bool,
+	private_android_service_t *this, ike_sa_t *ike_sa, alert_t alert,
+	va_list args)
+{
+	if (this->ike_sa == ike_sa)
+	{
+		switch (alert)
+		{
+			case ALERT_PEER_ADDR_FAILED:
+				charonservice->update_status(charonservice,
+											 CHARONSERVICE_LOOKUP_ERROR);
+				break;
+			case ALERT_PEER_AUTH_FAILED:
+				charonservice->update_status(charonservice,
+											 CHARONSERVICE_PEER_AUTH_ERROR);
+				break;
+			case ALERT_KEEP_ON_CHILD_SA_FAILURE:
+			{
+				uint32_t *id = malloc_thing(uint32_t);
+
+				/* because close_ike_on_child_failure is set this is only
+				 * triggered when CHILD_SA rekeying failed. reestablish it in
+				 * the hope that the initial setup works again. */
+				*id = ike_sa->get_unique_id(ike_sa);
+				lib->processor->queue_job(lib->processor,
+					(job_t*)callback_job_create_with_prio(
+						(callback_job_cb_t)reestablish, id, free,
+						(callback_job_cancel_t)return_false, JOB_PRIO_HIGH));
+				break;
+			}
+			case ALERT_PEER_INIT_UNREACHABLE:
+				this->lock->read_lock(this->lock);
+				if (this->tunfd < 0)
+				{
+					uint32_t *id = malloc_thing(uint32_t);
+
+					/* always fail if we are not able to initiate the IKE_SA
+					 * initially */
+					charonservice->update_status(charonservice,
+											CHARONSERVICE_UNREACHABLE_ERROR);
+					/* terminate the IKE_SA so no further keying tries are
+					 * attempted */
+					*id = ike_sa->get_unique_id(ike_sa);
+					lib->processor->queue_job(lib->processor,
+						(job_t*)callback_job_create_with_prio(
+							(callback_job_cb_t)terminate, id, free,
+							(callback_job_cancel_t)return_false, JOB_PRIO_HIGH));
+				}
+				else
+				{
+					peer_cfg_t *peer_cfg;
+					uint32_t tries, try;
+
+					/* when reestablishing and if keyingtries is not %forever
+					 * the IKE_SA is destroyed after the set number of tries,
+					 * so notify the GUI */
+					peer_cfg = ike_sa->get_peer_cfg(ike_sa);
+					tries = peer_cfg->get_keyingtries(peer_cfg);
+					try = va_arg(args, uint32_t);
+					if (tries != 0 && try == tries-1)
+					{
+						charonservice->update_status(charonservice,
+											CHARONSERVICE_UNREACHABLE_ERROR);
+					}
+				}
+				this->lock->unlock(this->lock);
+				break;
+			default:
+				break;
+		}
+	}
+	return TRUE;
+}
+
 static void add_auth_cfg_pw(private_android_service_t *this,
 							peer_cfg_t *peer_cfg, bool byod)
 {
-	identification_t *user;
+	identification_t *user, *id = NULL;
 	auth_cfg_t *auth;
-	char *username, *password;
+	char *username, *password, *local_id;
 
 	auth = auth_cfg_create();
 	auth->add(auth, AUTH_RULE_AUTH_CLASS, AUTH_CLASS_EAP);
@@ -622,8 +638,19 @@ static void add_auth_cfg_pw(private_android_service_t *this,
 									   NULL);
 	password = this->settings->get_str(this->settings, "connection.password",
 									   NULL);
+	local_id = this->settings->get_str(this->settings, "connection.local_id",
+									   NULL);
 	user = identification_create_from_string(username);
-	auth->add(auth, AUTH_RULE_IDENTITY, user);
+	auth->add(auth, AUTH_RULE_EAP_IDENTITY, user);
+	if (local_id)
+	{
+		id = identification_create_from_string(local_id);
+	}
+	if (!id)
+	{
+		id = user->clone(user);
+	}
+	auth->add(auth, AUTH_RULE_IDENTITY, id);
 
 	this->creds->add_username_password(this->creds, username, password);
 	peer_cfg->add_auth_cfg(peer_cfg, auth, TRUE);
@@ -633,9 +660,9 @@ static bool add_auth_cfg_cert(private_android_service_t *this,
 							  peer_cfg_t *peer_cfg)
 {
 	certificate_t *cert;
-	identification_t *id;
+	identification_t *id = NULL;
 	auth_cfg_t *auth;
-	char *type;
+	char *type, *local_id;
 
 	cert = this->creds->load_user_certificate(this->creds);
 	if (!cert)
@@ -649,8 +676,8 @@ static bool add_auth_cfg_cert(private_android_service_t *this,
 	{
 		auth->add(auth, AUTH_RULE_AUTH_CLASS, AUTH_CLASS_EAP);
 		auth->add(auth, AUTH_RULE_EAP_TYPE, EAP_TLS);
-		id = identification_create_from_string("%any");
-		auth->add(auth, AUTH_RULE_AAA_IDENTITY, id);
+		auth->add(auth, AUTH_RULE_AAA_IDENTITY,
+				  identification_create_from_string("%any"));
 	}
 	else
 	{
@@ -658,29 +685,51 @@ static bool add_auth_cfg_cert(private_android_service_t *this,
 	}
 	auth->add(auth, AUTH_RULE_SUBJECT_CERT, cert);
 
-	id = cert->get_subject(cert);
-	auth->add(auth, AUTH_RULE_IDENTITY, id->clone(id));
+	local_id = this->settings->get_str(this->settings, "connection.local_id",
+									   NULL);
+	if (local_id)
+	{
+		id = identification_create_from_string(local_id);
+	}
+	if (!id)
+	{
+		id = cert->get_subject(cert);
+		id = id->clone(id);
+	}
+	auth->add(auth, AUTH_RULE_IDENTITY, id);
 	peer_cfg->add_auth_cfg(peer_cfg, auth, TRUE);
 	return TRUE;
 }
 
 static job_requeue_t initiate(private_android_service_t *this)
 {
-	identification_t *gateway;
+	identification_t *gateway = NULL;
 	ike_cfg_t *ike_cfg;
 	peer_cfg_t *peer_cfg;
 	child_cfg_t *child_cfg;
 	traffic_selector_t *ts;
 	ike_sa_t *ike_sa;
 	auth_cfg_t *auth;
-	lifetime_cfg_t lifetime = {
-		.time = {
-			.life = 3600, /* 1h */
-			.rekey = 3000, /* 50min */
-			.jitter = 300 /* 5min */
-		}
+	peer_cfg_create_t peer = {
+		.cert_policy = CERT_SEND_IF_ASKED,
+		.unique = UNIQUE_REPLACE,
+		.rekey_time = 36000, /* 10h */
+		.jitter_time = 600, /* 10min */
+		.over_time = 600, /* 10min */
 	};
-	char *type, *server;
+	child_cfg_create_t child = {
+		.lifetime = {
+			.time = {
+				.life = 3600, /* 1h */
+				.rekey = 3000, /* 50min */
+				.jitter = 300 /* 5min */
+			},
+		},
+		.mode = MODE_TUNNEL,
+		.dpd_action = ACTION_RESTART,
+		.close_action = ACTION_RESTART,
+	};
+	char *type, *server, *remote_id;
 	int port;
 
 	server = this->settings->get_str(this->settings, "connection.server", NULL);
@@ -692,13 +741,7 @@ static job_requeue_t initiate(private_android_service_t *this)
 	ike_cfg->add_proposal(ike_cfg, proposal_create_default(PROTO_IKE));
 	ike_cfg->add_proposal(ike_cfg, proposal_create_default_aead(PROTO_IKE));
 
-	peer_cfg = peer_cfg_create("android", ike_cfg, CERT_SEND_IF_ASKED,
-							   UNIQUE_REPLACE, 0, /* keyingtries */
-							   36000, 0, /* rekey 10h, reauth none */
-							   600, 600, /* jitter, over 10min */
-							   TRUE, FALSE, TRUE, /* mobike, aggressive, pull */
-							   0, 0, /* DPD delay, timeout */
-							   FALSE, NULL, NULL); /* mediation */
+	peer_cfg = peer_cfg_create("android", ike_cfg, &peer);
 	peer_cfg->add_virtual_ip(peer_cfg, host_create_any(AF_INET));
 	peer_cfg->add_virtual_ip(peer_cfg, host_create_any(AF_INET6));
 
@@ -725,15 +768,24 @@ static job_requeue_t initiate(private_android_service_t *this)
 
 	/* remote auth config */
 	auth = auth_cfg_create();
-	gateway = identification_create_from_string(server);
+	remote_id = this->settings->get_str(this->settings, "connection.remote_id",
+										NULL);
+	if (remote_id)
+	{
+		gateway = identification_create_from_string(remote_id);
+	}
+	if (!gateway || gateway->get_type(gateway) == ID_ANY)
+	{
+		DESTROY_IF(gateway);
+		gateway = identification_create_from_string(server);
+		/* only use this if remote ID was not configured explicitly */
+		auth->add(auth, AUTH_RULE_IDENTITY_LOOSE, TRUE);
+	}
 	auth->add(auth, AUTH_RULE_IDENTITY, gateway);
-	auth->add(auth, AUTH_RULE_IDENTITY_LOOSE, TRUE);
 	auth->add(auth, AUTH_RULE_AUTH_CLASS, AUTH_CLASS_PUBKEY);
 	peer_cfg->add_auth_cfg(peer_cfg, auth, FALSE);
 
-	child_cfg = child_cfg_create("android", &lifetime, NULL, TRUE, MODE_TUNNEL,
-								 ACTION_NONE, ACTION_RESTART, ACTION_RESTART,
-								 FALSE, 0, 0, NULL, NULL, 0);
+	child_cfg = child_cfg_create("android", &child);
 	/* create ESP proposals with and without DH groups, let responder decide
 	 * if PFS is used */
 	child_cfg->add_proposal(child_cfg, proposal_create_from_string(PROTO_ESP,
@@ -820,8 +872,7 @@ android_service_t *android_service_create(android_creds_t *creds,
 		.public = {
 			.listener = {
 				.ike_rekey = _ike_rekey,
-				.ike_reestablish_pre = _ike_reestablish_pre,
-				.ike_reestablish_post = _ike_reestablish_post,
+				.ike_reestablish_post = _ike_reestablish_post_redirect,
 				.ike_updown = _ike_updown,
 				.child_updown = _child_updown,
 				.alert = _alert,
