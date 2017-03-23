@@ -93,7 +93,7 @@ static inline void sub_usage(usage_t *a, usage_t b)
  */
 typedef struct {
 	/** unique CHILD_SA identifier */
-	u_int32_t id;
+	uint32_t id;
 	/** usage stats for this SA */
 	usage_t usage;
 } sa_entry_t;
@@ -160,7 +160,7 @@ static int sa_find(const void *a, const void *b)
 /**
  * Update or create usage counters of a cached SA
  */
-static void update_sa(quota_accounting_entry_t *entry, u_int32_t id, usage_t usage)
+static void update_sa(quota_accounting_entry_t *entry, uint32_t id, usage_t usage)
 {
 	sa_entry_t *sa, lookup;
 
@@ -293,7 +293,7 @@ static void cleanup_sas(private_quota_accounting_t *this, ike_sa_t *ike_sa,
  * Get an existing or create a new entry from the locked session table
  */
 static quota_accounting_entry_t* get_or_create_entry(private_quota_accounting_t *this,
-									ike_sa_id_t *id, u_int32_t unique)
+									ike_sa_id_t *id, uint32_t unique)
 {
 	quota_accounting_entry_t *entry;
 	time_t now;
@@ -664,7 +664,7 @@ METHOD(listener_t, child_rekey, bool,
 
 METHOD(listener_t, children_migrate, bool,
 		private_quota_accounting_t *this, ike_sa_t *ike_sa, ike_sa_id_t *new,
-	u_int32_t unique)
+	uint32_t unique)
 {
 	enumerator_t *enumerator;
 	sa_entry_t *sa, *sa_new, *cached;

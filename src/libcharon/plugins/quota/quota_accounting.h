@@ -60,8 +60,8 @@ typedef enum {
  */
 typedef struct {
 	struct {
-		u_int64_t sent;
-		u_int64_t received;
+		uint64_t sent;
+		uint64_t received;
 	} bytes, packets;
 } usage_t;
 
@@ -96,7 +96,7 @@ typedef struct {
 	terminate_cause_t cause;
 	/* update interval and timestamp of last update */
 	struct {
-		u_int32_t interval;
+		uint32_t interval;
 		time_t last;
 	} update;
 	/** did we send Accounting-Start */
