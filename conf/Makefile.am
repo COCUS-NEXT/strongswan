@@ -77,6 +77,7 @@ plugins = \
 	plugins/osx-attr.opt \
 	plugins/p-cscf.opt \
 	plugins/pkcs11.opt \
+	plugins/quota.opt \
 	plugins/radattr.opt \
 	plugins/random.opt \
 	plugins/resolve.opt \
