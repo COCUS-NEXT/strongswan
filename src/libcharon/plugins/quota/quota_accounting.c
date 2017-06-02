@@ -410,12 +410,12 @@ static job_requeue_t do_update(update_data_t *data)
 
 		add_usage(&usage, entry->usage);
 
-		quota_invoke(ike_sa, QUOTA_UPDATE, entry);
-
 		schedule_update(this, entry);
 	}
 	this->mutex->unlock(this->mutex);
 	array_destroy_function(stats, (void*)free, NULL);
+
+	quota_invoke(ike_sa, QUOTA_UPDATE, entry);
 
 	return JOB_REQUEUE_NONE;
 }
@@ -484,19 +484,16 @@ static void do_start(private_quota_accounting_t *this, ike_sa_t *ike_sa)
 	}
 	entry->start_sent = TRUE;
 
-	quota_invoke(ike_sa, QUOTA_START, entry);
-
 	if (!entry->update.interval)
 	{
 		entry->update.interval = lib->settings->get_time(lib->settings,
 					"%s.plugins.quota.update_interval", 0, lib->ns);
-		if (entry->update.interval)
-		{
-			DBG1(DBG_CFG, "scheduling quota Updates every %us", entry->update.interval);
-		}
 	}
 	schedule_update(this, entry);
 	this->mutex->unlock(this->mutex);
+
+	// finally call shell hook outside of any locks
+	quota_invoke(ike_sa, QUOTA_START, entry);
 }
 
 
@@ -543,6 +540,7 @@ METHOD(listener_t, alert, bool,
 		private_quota_accounting_t *this, ike_sa_t *ike_sa, alert_t alert,
 	va_list args)
 {
+	DBG2(DBG_CHD, "quota alert");
 	terminate_cause_t cause;
 	quota_accounting_entry_t *entry;
 
@@ -570,6 +568,7 @@ METHOD(listener_t, alert, bool,
 METHOD(listener_t, ike_updown, bool,
 		private_quota_accounting_t *this, ike_sa_t *ike_sa, bool up)
 {
+	DBG2(DBG_CHD, "quota ike_updown");
 	if (!up)
 	{
 		enumerator_t *enumerator;
@@ -585,6 +584,7 @@ METHOD(listener_t, ike_updown, bool,
 
 		do_stop(this, ike_sa);
 	}
+
 	return TRUE;
 }
 
@@ -592,6 +592,7 @@ METHOD(listener_t, message_hook, bool,
 		private_quota_accounting_t *this, ike_sa_t *ike_sa,
 	message_t *message, bool incoming, bool plain)
 {
+	DBG2(DBG_CHD, "quota message_hook");
 	/* start accounting here, virtual IP now is set */
 	if (plain && ike_sa->get_state(ike_sa) == IKE_ESTABLISHED &&
 		!incoming && !message->get_request(message))
@@ -608,6 +609,7 @@ METHOD(listener_t, message_hook, bool,
 METHOD(listener_t, assign_vips, bool,
 		private_quota_accounting_t *this, ike_sa_t *ike_sa, bool assign)
 {
+	DBG2(DBG_CHD, "quota assign_vips");
 	/* start accounting as soon as the virtual IP is set */
 	if (assign && ike_sa->get_version(ike_sa) == IKEV1)
 	{
@@ -619,6 +621,7 @@ METHOD(listener_t, assign_vips, bool,
 METHOD(listener_t, ike_rekey, bool,
 		private_quota_accounting_t *this, ike_sa_t *old, ike_sa_t *new)
 {
+	DBG2(DBG_CHD, "quota ike_rekey");
 	quota_accounting_entry_t *entry;
 
 	this->mutex->lock(this->mutex);
@@ -649,6 +652,7 @@ METHOD(listener_t, child_rekey, bool,
 		private_quota_accounting_t *this, ike_sa_t *ike_sa,
 	child_sa_t *old, child_sa_t *new)
 {
+	DBG2(DBG_CHD, "quota child_rekey");
 	quota_accounting_entry_t *entry;
 
 	update_usage(this, ike_sa, old);
@@ -666,6 +670,7 @@ METHOD(listener_t, children_migrate, bool,
 		private_quota_accounting_t *this, ike_sa_t *ike_sa, ike_sa_id_t *new,
 	uint32_t unique)
 {
+	DBG2(DBG_CHD, "quota children_mograte");
 	enumerator_t *enumerator;
 	sa_entry_t *sa, *sa_new, *cached;
 	quota_accounting_entry_t *entry_old, *entry_new;
@@ -714,6 +719,7 @@ METHOD(listener_t, child_updown, bool,
 		private_quota_accounting_t *this, ike_sa_t *ike_sa,
 	child_sa_t *child_sa, bool up)
 {
+	DBG2(DBG_CHD, "quota child_updown");
 	if (!up && ike_sa->get_state(ike_sa) == IKE_ESTABLISHED)
 	{
 		update_usage(this, ike_sa, child_sa);
@@ -724,6 +730,7 @@ METHOD(listener_t, child_updown, bool,
 METHOD(quota_accounting_t, destroy, void,
 		private_quota_accounting_t *this)
 {
+	DBG2(DBG_CHD, "destroying quota plugin");
 	charon->bus->remove_listener(charon->bus, &this->public.listener);
 	singleton = NULL;
 	this->mutex->destroy(this->mutex);
