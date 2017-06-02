@@ -80,21 +80,24 @@ static private_quota_plugin_t *instance = NULL;
 /**
  * Load quota settings from configuration
  */
-static void load_config(private_quota_plugin_t *this)
+static bool load_config(private_quota_plugin_t *this)
 {
 	char *script;
 	bool acct;
+	uint32_t interval;
 
 	script = lib->settings->get_str(lib->settings, "%s.plugins.quota.script", NULL, lib->ns);
 	acct = lib->settings->get_bool(lib->settings, "%s.plugins.quota.accounting", NULL, lib->ns);
+	interval =  lib->settings->get_time(lib->settings, "%s.plugins.quota.update_interval", 0, lib->ns);
 
 	if (!script)
 	{
-		DBG1(DBG_CFG, "no script for quota plugin defined, disabled");
-		return;
+		DBG1(DBG_CFG, "no script for quota plugin defined, disabled.");
+		return false;
 	}
 
-	DBG1(DBG_CFG, "loaded quota plugin. accounting %s. script: %s", acct ? "enabled" : "disabled", script);
+	DBG1(DBG_CFG, "loaded quota plugin. accounting %s. interval %us script: %s", acct ? "enabled" : "disabled", interval, script);
+	return true;
 }
 
 METHOD(plugin_t, get_name, char*,
@@ -111,8 +114,8 @@ static bool plugin_cb(private_quota_plugin_t *this,
 {
 	if (reg)
 	{
-		load_config(this);
-		this->accounting = quota_accounting_create();
+		bool result = load_config(this);
+		if (result) this->accounting = quota_accounting_create();
 	}
 	else
 	{
