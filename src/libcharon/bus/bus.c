@@ -1020,11 +1020,11 @@ METHOD(bus_t, assign_vips, void,
 	entry_t *entry;
 	bool keep;
 
-	//this->mutex->lock(this->mutex);
+	this->mutex->lock(this->mutex);
 	enumerator = this->listeners->create_enumerator(this->listeners);
 	while (enumerator->enumerate(enumerator, &entry))
 	{
-		if (/*entry->calling ||*/ !entry->listener->assign_vips)
+		if (entry->calling || !entry->listener->assign_vips)
 		{
 			continue;
 		}
@@ -1037,7 +1037,7 @@ METHOD(bus_t, assign_vips, void,
 		}
 	}
 	enumerator->destroy(enumerator);
-	//this->mutex->unlock(this->mutex);
+	this->mutex->unlock(this->mutex);
 }
 
 METHOD(bus_t, handle_vips, void,
