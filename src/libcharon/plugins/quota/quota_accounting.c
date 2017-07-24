@@ -26,6 +26,7 @@
 #include <collections/hashtable.h>
 #include <threading/mutex.h>
 #include <processing/jobs/callback_job.h>
+#include <processing/jobs/delete_ike_sa_job.h>
 
 #include "quota_plugin.h"
 #include "quota_accounting.h"
@@ -415,7 +416,14 @@ static job_requeue_t do_update(update_data_t *data)
 	this->mutex->unlock(this->mutex);
 	array_destroy_function(stats, (void*)free, NULL);
 
-	quota_invoke(ike_sa, QUOTA_UPDATE, entry);
+	bool success = FALSE;
+	quota_invoke(ike_sa, QUOTA_UPDATE, entry, &success);
+	if (!success)
+	{
+		DBG1(DBG_CHD, "deleting IKE_SA after unsuccessful QUOTA_UPDATE");
+		lib->processor->queue_job(lib->processor,
+			(job_t*)delete_ike_sa_job_create(ike_sa->get_id(ike_sa), TRUE));
+	}
 
 	return JOB_REQUEUE_NONE;
 }
@@ -493,7 +501,14 @@ static void do_start(private_quota_accounting_t *this, ike_sa_t *ike_sa)
 	this->mutex->unlock(this->mutex);
 
 	// finally call shell hook outside of any locks
-	quota_invoke(ike_sa, QUOTA_START, entry);
+	bool success = FALSE;
+	quota_invoke(ike_sa, QUOTA_START, entry, &success);
+	if (!success)
+	{
+		DBG1(DBG_CHD, "deleting IKE_SA after unsuccessful QUOTA_START");
+		lib->processor->queue_job(lib->processor,
+			(job_t*)delete_ike_sa_job_create(ike_sa->get_id(ike_sa), TRUE));
+	}
 }
 
 
@@ -530,7 +545,14 @@ static void do_stop(private_quota_accounting_t *this, ike_sa_t *ike_sa)
 		}
 		enumerator->destroy(enumerator);
 
-		quota_invoke(ike_sa, QUOTA_STOP, entry);
+		bool success = FALSE;
+		quota_invoke(ike_sa, QUOTA_STOP, entry, &success);
+        if (!success)
+        {
+            DBG1(DBG_CHD, "deleting IKE_SA after unsuccessful QUOTA_STOP");
+            lib->processor->queue_job(lib->processor,
+                (job_t*)delete_ike_sa_job_create(ike_sa->get_id(ike_sa), TRUE));
+        }
 
 		destroy_entry(entry);
 	}

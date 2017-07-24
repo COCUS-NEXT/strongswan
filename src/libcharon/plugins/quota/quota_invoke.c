@@ -105,10 +105,11 @@ static void push_vip_env( ike_sa_t *ike_sa,
 /**
  * Invoke the quota script once for given traffic selectors
  */
-void quota_invoke(ike_sa_t *ike_sa, quota_event_t status, quota_accounting_entry_t* entry)
+void quota_invoke(ike_sa_t *ike_sa, quota_event_t status, quota_accounting_entry_t* entry, bool *success)
 {
 	host_t *me, *other;
-	int out;
+	int out, retval;
+	*success = FALSE;
 	FILE *shell;
 	process_t *process;
 	char *envp[128] = {};
@@ -181,7 +182,15 @@ void quota_invoke(ike_sa_t *ike_sa, quota_event_t status, quota_accounting_entry
 		{
 			close(out);
 		}
-		process->wait(process, NULL);
+
+		// read shell return
+		if (process->wait(process, &retval))
+		{
+			if (retval == EXIT_SUCCESS)
+			{
+				*success = TRUE;
+			}
+		}
 	}
 	free_env(envp);
 }

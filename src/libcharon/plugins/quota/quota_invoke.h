@@ -28,6 +28,6 @@
 /**
  * Sets up the environment and calls the shell hander
  */
-void quota_invoke(ike_sa_t *ike_sa, quota_event_t status, quota_accounting_entry_t* entry);
+void quota_invoke(ike_sa_t *ike_sa, quota_event_t status, quota_accounting_entry_t* entry, bool *success);
 
 #endif /** QUOTA_INVOKE_H_ @}*/
