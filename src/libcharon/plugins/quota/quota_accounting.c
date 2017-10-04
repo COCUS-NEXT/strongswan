@@ -352,6 +352,7 @@ static job_requeue_t do_update(update_data_t *data)
 	enumerator_t *enumerator;
 	ike_sa_t *ike_sa;
 	quota_accounting_entry_t *entry;
+	quota_accounting_entry_t entry_local;
 	array_t *stats;
 	sa_entry_t *sa, *found;
 
@@ -412,17 +413,22 @@ static job_requeue_t do_update(update_data_t *data)
 		add_usage(&usage, entry->usage);
 
 		schedule_update(this, entry);
+		memcpy(&entry_local, entry, sizeof(quota_accounting_entry_t));
 	}
 	this->mutex->unlock(this->mutex);
 	array_destroy_function(stats, (void*)free, NULL);
 
-	bool success = FALSE;
-	quota_invoke(ike_sa, QUOTA_UPDATE, entry, &success);
-	if (!success)
+	// finally call shell hook outside of any locks
+	if (entry) // note: entry_local will have data when entry was set
 	{
-		DBG1(DBG_CHD, "deleting IKE_SA after unsuccessful QUOTA_UPDATE");
-		lib->processor->queue_job(lib->processor,
-			(job_t*)delete_ike_sa_job_create(ike_sa->get_id(ike_sa), TRUE));
+		bool success = FALSE;
+		quota_invoke(ike_sa, QUOTA_UPDATE, &entry_local, &success);
+		if (!success)
+		{
+			DBG1(DBG_CHD, "deleting IKE_SA after unsuccessful QUOTA_UPDATE");
+			lib->processor->queue_job(lib->processor,
+				(job_t*)delete_ike_sa_job_create(ike_sa->get_id(ike_sa), TRUE));
+		}
 	}
 
 	return JOB_REQUEUE_NONE;
@@ -547,12 +553,12 @@ static void do_stop(private_quota_accounting_t *this, ike_sa_t *ike_sa)
 
 		bool success = FALSE;
 		quota_invoke(ike_sa, QUOTA_STOP, entry, &success);
-        if (!success)
-        {
-            DBG1(DBG_CHD, "deleting IKE_SA after unsuccessful QUOTA_STOP");
-            lib->processor->queue_job(lib->processor,
-                (job_t*)delete_ike_sa_job_create(ike_sa->get_id(ike_sa), TRUE));
-        }
+		if (!success)
+		{
+			DBG1(DBG_CHD, "deleting IKE_SA after unsuccessful QUOTA_STOP");
+			lib->processor->queue_job(lib->processor,
+					(job_t*)delete_ike_sa_job_create(ike_sa->get_id(ike_sa), TRUE));
+		}
 
 		destroy_entry(entry);
 	}
